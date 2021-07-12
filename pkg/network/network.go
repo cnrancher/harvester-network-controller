@@ -9,6 +9,7 @@ type Network interface {
 	Type() string
 	Setup(nic string, vids []uint16) error
 	Teardown() error
+	NIC() iface.IFace
 }
 
 type IsolatedNetwork interface {

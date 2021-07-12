@@ -50,15 +50,18 @@ type NodeNetworkStatus struct {
 	NetworkLinkStatus map[string]*LinkStatus `json:"networkLinkStatus,omitempty"`
 
 	// +optional
-	PhysicalNICs []PhysicalNic `json:"physicalNICs,omitempty"`
+	NICs []Nic `json:"NICs,omitempty"`
 
 	// +optional
 	Conditions []Condition `json:"conditions,omitempty"`
 }
 
-type PhysicalNic struct {
-	Index             int    `json:"index,omitempty"`
-	Name              string `json:"name,omitempty"`
+type Nic struct {
+	Index             int    `json:"index"`
+	MasterIndex       int    `json:"masterIndex,omitempty"`
+	Name              string `json:"name"`
+	Type              string `json:"type"`
+	State             string `json:"state"`
 	UsedByMgmtNetwork bool   `json:"usedByManagementNetwork,omitempty"`
 }
 
@@ -84,7 +87,7 @@ type LinkStatus struct {
 	IPV4Address []string `json:"ipv4Address,omitempty"`
 
 	// +optional
-	Master string `json:"master,omitempty"`
+	MasterIndex int `json:"masterIndex,omitempty"`
 
 	// +optional
 	Routes []string `json:"routes,omitempty"`

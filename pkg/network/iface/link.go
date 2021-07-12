@@ -14,7 +14,16 @@ import (
 	"k8s.io/utils/net/ebtables"
 )
 
-const defaultPVID = uint16(1)
+const (
+	defaultPVID = uint16(1)
+
+	EmptyIndex = 0
+	EmptyName  = ""
+
+	TypeLoopback = "loopback"
+	TypeDevice   = "device"
+	TypeBond     = "bond"
+)
 
 type Link struct {
 	link   netlink.Link
@@ -22,15 +31,18 @@ type Link struct {
 	routes []netlink.Route
 }
 
-func GetLink(name string) (*Link, error) {
-	if name == "" {
-		return nil, fmt.Errorf("link name could not be empty string")
+func GetLink(name string, index int) (*Link, error) {
+	var l netlink.Link
+	var err error
+	if name != "" {
+		l, err = netlink.LinkByName(name)
+	} else {
+		l, err = netlink.LinkByIndex(index)
 	}
-
-	l, err := netlink.LinkByName(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not lookup link, error: %w, link: %s", err, name)
 	}
+
 	addr, err := netlink.AddrList(l, netlink.FAMILY_V4)
 	if err != nil {
 		return nil, fmt.Errorf("list IPv4 address of %s failed, error: %w", l.Attrs().Name, err)
@@ -251,4 +263,25 @@ func (l *Link) Fetch() error {
 	l.routes = routes
 
 	return nil
+}
+
+func ListLinks(typeSelector map[string]bool) ([]IFace, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return nil, err
+	}
+
+	var linkList []IFace
+
+	for _, link := range links {
+		// filter loopback interface
+		if link.Attrs().EncapType == TypeLoopback {
+			continue
+		}
+		if typeSelector[link.Type()] {
+			linkList = append(linkList, &Link{link: link})
+		}
+	}
+
+	return linkList, nil
 }
