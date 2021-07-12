@@ -22,6 +22,7 @@ import (
 	ctlnetworkv1 "github.com/harvester/harvester-network-controller/pkg/generated/controllers/network.harvesterhci.io/v1beta1"
 	"github.com/harvester/harvester-network-controller/pkg/network"
 	"github.com/harvester/harvester-network-controller/pkg/network/iface"
+	"github.com/harvester/harvester-network-controller/pkg/network/mgmt"
 	"github.com/harvester/harvester-network-controller/pkg/network/vlan"
 )
 
@@ -162,7 +163,7 @@ func (h Handler) repealVlan(nn *networkv1.NodeNetwork) error {
 		return nil
 	}
 
-	configuredNIC := v.SlaveNICName()
+	configuredNIC := v.NIC().Name()
 	if configuredNIC != "" && configuredNIC != nn.Spec.NIC {
 		if err := v.Teardown(); err != nil {
 			return fmt.Errorf("tear down vlan failed, error: %s, nic: %s", err.Error(), configuredNIC)
@@ -231,11 +232,11 @@ func (h Handler) updateStatus(nn *networkv1.NodeNetwork, status network.Status) 
 	}
 
 	// get all physical NICs
-	nics, err := getPhysicalNICs()
+	nics, err := getNICs()
 	if err != nil {
 		return err
 	}
-	nnCopy.Status.PhysicalNICs = nics
+	nnCopy.Status.NICs = nics
 
 	networkv1.NodeNetworkReady.SetStatusBool(nnCopy, status.Condition.Normal)
 	networkv1.NodeNetworkReady.Message(nnCopy, status.Condition.Message)
@@ -273,6 +274,7 @@ func (h Handler) getNadVidList() ([]uint16, error) {
 func makeLinkStatus(link iface.IFace) *networkv1.LinkStatus {
 	linkStatus := &networkv1.LinkStatus{
 		Index:       link.Index(),
+		MasterIndex: link.LinkAttrs().MasterIndex,
 		Type:        link.Type(),
 		MAC:         link.LinkAttrs().HardwareAddr.String(),
 		Promiscuous: link.LinkAttrs().Promisc != 0,
@@ -294,22 +296,35 @@ func makeLinkStatus(link iface.IFace) *networkv1.LinkStatus {
 	return linkStatus
 }
 
-func getPhysicalNICs() ([]networkv1.PhysicalNic, error) {
-	nics, err := iface.GetPhysicalNICs()
+func getNICs() ([]networkv1.Nic, error) {
+	links, err := iface.ListLinks(map[string]bool{iface.TypeDevice: true, iface.TypeBond: true})
 	if err != nil {
 		return nil, fmt.Errorf("list physical NICs failed")
 	}
 
-	physicalNICs := []networkv1.PhysicalNic{}
-	for index, nic := range nics {
-		physicalNICs = append(physicalNICs, networkv1.PhysicalNic{
-			Index:             index,
-			Name:              nic.Link.Attrs().Name,
-			UsedByMgmtNetwork: nic.UsedByManageNetwork,
-		})
+	flannelNetwork, err := mgmt.NewFlannelNetwork()
+	if err != nil {
+		return nil, err
+	}
+	mgmtNICIndex := flannelNetwork.NIC().Index()
+
+	nics := []networkv1.Nic{}
+	for _, l := range links {
+		nic := networkv1.Nic{
+			Index:       l.Index(),
+			MasterIndex: l.LinkAttrs().MasterIndex,
+			Name:        l.Name(),
+			Type:        l.Type(),
+			State:       l.LinkAttrs().OperState.String(),
+		}
+		if l.Index() == mgmtNICIndex {
+			nic.UsedByMgmtNetwork = true
+		}
+
+		nics = append(nics, nic)
 	}
 
-	return physicalNICs, nil
+	return nics, nil
 }
 
 func (h Handler) SendEvent(e *network.Event, networkType string) error {
